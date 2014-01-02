@@ -1,1 +1,7 @@
 files.log
+Makefile
+main.c
+akfm.c
+akfm.h
+view.sh
+clean.sh
