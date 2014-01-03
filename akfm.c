@@ -109,24 +109,20 @@ void akfm_aux_adv(ak_file_manager *akfm)
 /* akfm_aux_find */
 //advances the file pointer the the # after hash value of key
 //returns:
-//	fpos_t position of the key
-//  NULL if not found
-fpos_t *akfm_aux_find(ak_file_manager *akfm, const char *key)
+//	1 if it found the entry
+//  0 if it did not find the entry
+int akfm_aux_find(ak_file_manager *akfm, const char *key)
 {
-	fpos_t *pos = NULL;
 	int n = akfm_aux_hash(key);
 	int found = 0;
 	int i;
 	while (!found && fscanf(akfm->fp, "%d", &i) == 1) {
-		if (i == n) {
+		if (i == n)
 			found = !found;
-			pos = (fpos_t *)malloc(sizeof(fpos_t));
-			fgetpos(akfm->fp, pos);
-		} else {
+		else
 			akfm_aux_adv(akfm);
-        }
 	}
-	return pos;
+	return found;
 }
 
 /* akfm_aux_copy */
@@ -163,6 +159,38 @@ void akfm_aux_copy(ak_file_manager *akfm, fpos_t *pos)
 	free(pos);
 }
 
+/* akfm_aux_spcp */
+//copies everything except for the repeated entry
+void akfm_aux_spcp(ak_file_manager *akfm, const char *key)
+{
+    FILE *tempf = fopen("temp.txt", "w");
+    
+    int h = akfm_aux_hash(key);
+    int n;
+    char c;
+    rewind(akfm->fp);
+    while (fscanf(akfm->fp, "%d", &n) == 1) {
+        if (n == h) {
+            //skip the repeated entry
+            akfm_aux_adv(akfm);
+        } else {
+            //copy the entry
+            while ((c = fgetc(akfm->fp)) != EOF && c != '_')
+                fputc(c, tempf);
+            
+            //copy that _
+            if (c != EOF)
+                fputc('_', tempf);
+        }
+    }
+    
+    //remove the old file and change the name of this one
+	fflush(tempf);
+    fclose(akfm->fp);
+	remove(akfm->fn);
+	rename("temp.txt", akfm->fn);
+}
+
 /* akfm_write */
 //writes data to the file
 //connects the key to the value
@@ -174,10 +202,11 @@ int akfm_write_int(ak_file_manager *akfm, const char *key, int value)
 		return err;
 	
 	//see if you need to overwrite entry
-	fpos_t *pos = NULL;
 	int h = akfm_aux_hash(key);
-	if ((pos = akfm_aux_find(akfm, key)))
-		akfm_aux_copy(akfm, pos);
+	if (akfm_aux_find(akfm, key)) {
+		akfm_aux_spcp(akfm, key);
+        reopen(akfm->fn, "r+", akfm->fp);
+    }
     fprintf(akfm->fp, "%d#%d@1$%d_", h, AK_INT, value);
 	
 	//flush and close file
@@ -194,11 +223,12 @@ int akfm_write_char(ak_file_manager *akfm, const char *key, char value)
 	if ((err = akfm_aux_checkafm(akfm, "r+")))
 		return err;
 	
-	//advance file pointer to possible entry
-	fpos_t *pos = NULL;
+	//see if you need to overwrite entry
 	int h = akfm_aux_hash(key);
-	if ((pos = akfm_aux_find(akfm, key)))
-		akfm_aux_copy(akfm, pos);
+	if (akfm_aux_find(akfm, key)) {
+		akfm_aux_spcp(akfm, key);
+        reopen(akfm->fn, "r+", akfm->fp);
+    }
     fprintf(akfm->fp, "%d#%d@1$%c_", h, AK_CHAR, value);
 	
 	//flush and close file
@@ -215,14 +245,14 @@ int akfm_write_string(ak_file_manager *akfm, const char *key, const char *value)
 	if ((err = akfm_aux_checkafm(akfm, "r+")))
 		return err;
     
-	//advance file pointer to possible entry
-	fpos_t *pos = NULL;
+	//see if you need to overwrite entry
 	int h = akfm_aux_hash(key);
-	if ((pos = akfm_aux_find(akfm, key)))
-		akfm_aux_copy(akfm, pos);
-	else
-		fprintf(akfm->fp, "%d@%d_%s_", h, AK_STRING, value);
-    
+	if (akfm_aux_find(akfm, key)) {
+		akfm_aux_spcp(akfm, key);
+        reopen(akfm->fn, "r+", akfm->fp);
+    }
+    fprintf(akfm->fp, "%d#%d@%d$%s_", h, AK_STRING, value);
+	
 	//flush and close file
 	fflush(akfm->fp);
 	fclose(akfm->fp);
