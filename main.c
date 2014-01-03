@@ -10,7 +10,7 @@ int main(int argc, char *argv[])
 {
     ak_file_manager *manager = akfm_create("chicken");
     
-    akfm_write_int(manager, "eggs", 13);
+    akfm_erase(manager);
     
     akfm_free(manager);
     

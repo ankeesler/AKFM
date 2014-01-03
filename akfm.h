@@ -53,18 +53,27 @@ int akfm_write_string(ak_file_manager *akfm,
 //returns:
 //	value if it is in the file
 //	0 if it is not in the file
-int akfm_read_int(ak_file_manager *akfm, const char *key);
-char akfm_read_char(ak_file_manager *akfm, const char *key);
-char *akfm_read_string(ak_file_manager *akfm, const char *key);
+int akfm_read_int(ak_file_manager *akfm,
+                  const char *key);
+char akfm_read_char(ak_file_manager *akfm,
+                    const char *key);
+char *akfm_read_string(ak_file_manager *akfm,
+                       const char *key);
 
 /* akfm delete */
-//deletes the file that akfm is managing
-//this will completely erase the file
+//deletes the key, if it exists
 //returns:
-//	0 on success
-//	-1 if file manager is NULL
-int akfm_erase(ak_file_manager *akfm);
+//  0 if something was deleted
+//  1 if nothing was deleted
+int akfm_delete(ak_file_manager *akfm, const char *key);
 
+
+/* akfm_erase */
+//erases the whole file
+//returns:
+//  0 if succesfully erased
+//  error otherwise
+int akfm_erase(ak_file_manager *akfm);
 
 /* akfm free */
 //this frees up all the pointers that the file manager has

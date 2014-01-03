@@ -3,11 +3,6 @@
 
 #include "akfm.h"
 
-//data types
-typedef enum {AK_INT, AK_LONG, AK_FLOAT, AK_DOUBLE, AK_CHAR, AK_STRING} ak_data_t;
-int ak_data_toi(ak_data_t t) {return t;}
-int ak_data_ctoi(char c) {return (int) c - '0';}
-
 /* HASH FUNCTION */
 
 /* akfm_aux_hash */
@@ -73,10 +68,10 @@ ak_file_manager *akfm_create(const char *filename)
 #pragma mark - WRITING
 
 //ex: write "name" "andrew"
-//	14234#[AK_STRING]@6$andrew_
+//	14234#6@1$andrew_
 //	^^^^^ let's pretend this is the hash value of "name"
 //ex: write "age" 21
-//	3132#[AK_INT]@1$21_
+//	3132#1@4$21_
 //	^^^^^ let's pretend this is the hash value of "age"
 
 /* akfm_aux_checkafm */
@@ -113,50 +108,16 @@ void akfm_aux_adv(ak_file_manager *akfm)
 //  0 if it did not find the entry
 int akfm_aux_find(ak_file_manager *akfm, const char *key)
 {
-	int n = akfm_aux_hash(key);
-	int found = 0;
-	int i;
+	int n = akfm_aux_hash(key),
+        found = 0,
+        i;
 	while (!found && fscanf(akfm->fp, "%d", &i) == 1) {
 		if (i == n)
-			found = !found;
+            found = !found;
 		else
-			akfm_aux_adv(akfm);
+            akfm_aux_adv(akfm);
 	}
 	return found;
-}
-
-/* akfm_aux_copy */
-//copies the file over except for the data at pos
-void akfm_aux_copy(ak_file_manager *akfm, fpos_t *pos)
-{
-	//open new file
-	FILE *tempf = fopen("temp.txt", "w");
-	
-	//copy file except for this entry
-	char c;
-	int search = 1;
-	fpos_t curpos;
-	rewind(akfm->fp);
-	while ((c = getc(akfm->fp)) != EOF) {
-		//see if you are still looking for the repeated key
-		if (search)
-			fgetpos(tempf, &curpos);
-        
-		//copy the file unless you are at the same entry
-		if (search && curpos == *pos) {
-            search = 0;
-            akfm_aux_adv(akfm);
-        } else {
-			fputc(c, tempf);
-        }
-	}
-	
-	//remove the old file and change the name of this one
-	fflush(tempf);
-	remove(akfm->fn);
-	rename("temp.txt", akfm->fn);
-	
-	free(pos);
 }
 
 /* akfm_aux_spcp */
@@ -175,6 +136,7 @@ void akfm_aux_spcp(ak_file_manager *akfm, const char *key)
             akfm_aux_adv(akfm);
         } else {
             //copy the entry
+            fprintf(tempf, "%d", n);
             while ((c = fgetc(akfm->fp)) != EOF && c != '_')
                 fputc(c, tempf);
             
@@ -185,8 +147,8 @@ void akfm_aux_spcp(ak_file_manager *akfm, const char *key)
     }
     
     //remove the old file and change the name of this one
-	fflush(tempf);
-    fclose(akfm->fp);
+    fflush(tempf);
+    fclose(tempf);
 	remove(akfm->fn);
 	rename("temp.txt", akfm->fn);
 }
@@ -205,9 +167,9 @@ int akfm_write_int(ak_file_manager *akfm, const char *key, int value)
 	int h = akfm_aux_hash(key);
 	if (akfm_aux_find(akfm, key)) {
 		akfm_aux_spcp(akfm, key);
-        reopen(akfm->fn, "r+", akfm->fp);
+        akfm->fp = freopen(akfm->fn, "a", akfm->fp);
     }
-    fprintf(akfm->fp, "%d#%d@1$%d_", h, AK_INT, value);
+    fprintf(akfm->fp, "%d#%d@%lu$%d_", h, 1, sizeof(int), value);
 	
 	//flush and close file
 	fflush(akfm->fp);
@@ -227,9 +189,9 @@ int akfm_write_char(ak_file_manager *akfm, const char *key, char value)
 	int h = akfm_aux_hash(key);
 	if (akfm_aux_find(akfm, key)) {
 		akfm_aux_spcp(akfm, key);
-        reopen(akfm->fn, "r+", akfm->fp);
+        akfm->fp = freopen(akfm->fn, "a", akfm->fp);
     }
-    fprintf(akfm->fp, "%d#%d@1$%c_", h, AK_CHAR, value);
+    fprintf(akfm->fp, "%d#%d@%lu$%c_", h, 1, sizeof(char), value);
 	
 	//flush and close file
 	fflush(akfm->fp);
@@ -249,9 +211,9 @@ int akfm_write_string(ak_file_manager *akfm, const char *key, const char *value)
 	int h = akfm_aux_hash(key);
 	if (akfm_aux_find(akfm, key)) {
 		akfm_aux_spcp(akfm, key);
-        reopen(akfm->fn, "r+", akfm->fp);
+        akfm->fp = freopen(akfm->fn, "a", akfm->fp);
     }
-    fprintf(akfm->fp, "%d#%d@%d$%s_", h, AK_STRING, value);
+    fprintf(akfm->fp, "%d#%d@%lu$%s_", h, (int)strlen(value), sizeof(char), value);
 	
 	//flush and close file
 	fflush(akfm->fp);
@@ -265,73 +227,55 @@ int akfm_write_string(ak_file_manager *akfm, const char *key, const char *value)
 
 /* akfm_aux_getv */
 //gets the value
-//assumes the file pointer is on a $ or @
+//assumes the file pointer is on #
 void *akfm_aux_getv(ak_file_manager *akfm)
 {
-	//advance file pointer to $ or @
-	char c;
-	while ((c = fgetc(akfm->fp)) != EOF && (c != '@' && c != '$'))
+    char c;
+    
+	//advance file pointer past #
+	while ((c = fgetc(akfm->fp)) != EOF && c != '#')
 		;
     
-	//get information
-	int isArray = c == '@';
-	int size = 1;
-	ak_data_t type = 0;
-	if ((c = fgetc(akfm->fp)) != EOF) {
-		type = ak_data_ctoi( c );
-		if (isArray) {
-			fscanf(akfm->fp, "%d", &size);
-		}
-	}
-	
-	//move past the '_' separator
-	fseek(akfm->fp, 1, SEEK_CUR);
+	//get number
+	int num;
+    fscanf(akfm->fp, "%d", &num);
+    
+    //advance file pointer past @
+    while ((c = fgetc(akfm->fp)) != EOF && c != '@')
+		;
+    
+    //get size
+    int size;
+    fscanf(akfm->fp, "%d", &size);
+    
+    //advance file pointer past $
+    while ((c = fgetc(akfm->fp)) != EOF && c != '$')
+		;
 	
 	//makes buffer depending on type
 	void *buf;
-	size_t s;
 	char format[3];
-	switch(type) {
-		case AK_INT:
-			s = sizeof(int);
+	switch(size) {
+		case 1:
+			strcpy(format,"%c");
+			buf = malloc(num * size);
+			break;
+		case 4:
 			strcpy(format,"%d");
-			buf = malloc(s * size);
-			break;
-		case AK_LONG:
-			s = sizeof(long);
-			strcpy(format,"%ld");
-			buf = malloc(s * size);
-			break;
-		case AK_FLOAT:
-			s = sizeof(float);
-			strcpy(format, "%f");
-			buf = malloc(s * size);
-			break;
-		case AK_DOUBLE:
-			s = sizeof(double);
-			strcpy(format, "%lf");
-			buf = malloc(s * size);
-			break;
-		case AK_STRING:
-		case AK_CHAR:
-			s = sizeof(char);
-			strcpy(format, "%c");
-			buf = malloc(s * size);
+			buf = malloc(num * size);
 			break;
 		default:
-			printf("ak_manager_err: cannot read type: %d", (int)type);
+			printf("ak_manager_err: cannot read size: %d", size);
 	}
 	
 	//scan data into buffer
 	int i;
-	for (i = 0; i < size; i ++) {
+	for (i = 0; i < num; i ++) {
 		fscanf(akfm->fp, format, buf);
-		buf += s;
-		//move past the ',' separator
-		fseek(akfm->fp, 1, SEEK_CUR);
+		buf += size;
 	}
 	//reset buffer position
-	buf -= (s * size);
+	buf -= (size * num);
 	
 	//return buffer
 	return buf;
@@ -344,7 +288,6 @@ void *akfm_aux_getv(ak_file_manager *akfm)
 //returns:
 //	value, if the key exists
 //	0, else
-
 int akfm_read_int(ak_file_manager *akfm, const char *key)
 {
 	//check environment
@@ -356,7 +299,7 @@ int akfm_read_int(ak_file_manager *akfm, const char *key)
 	int *dbuf = NULL;
 	if (akfm_aux_find(akfm, key))
 		dbuf = (int *)akfm_aux_getv(akfm);
-    
+
 	//flush and close file
 	fflush(akfm->fp);
 	fclose(akfm->fp);
@@ -409,7 +352,7 @@ char *akfm_read_string(ak_file_manager *akfm, const char *key)
 	fclose(akfm->fp);
 	
 	//copy value from buffer
-	char *value = (dbuf) ? dbuf : NULL;
+	char *value = (dbuf) ? dbuf : 0;
 	free(dbuf);
 	
 	return value;
@@ -418,20 +361,44 @@ char *akfm_read_string(ak_file_manager *akfm, const char *key)
 #pragma mark - DELETING/ERASING
 
 /* akfm delete */
-//deletes the file that akfm is managing
-//this will completely erase the file
+//deletes the key, if it exists
+//returns:
+//  0 if something was deleted
+//  1 if nothing was deleted
+int akfm_delete(ak_file_manager *akfm, const char *key)
+{
+    //check environment
+	int err;
+	if ((err = akfm_aux_checkafm(akfm, "r+")))
+		return err;
+	
+	//see if entry exists
+    int rval = 1;
+	if (akfm_aux_find(akfm, key)) {
+		akfm_aux_spcp(akfm, key);
+        rval = 0;
+    }
+	
+	//flush and close file
+	fflush(akfm->fp);
+	fclose(akfm->fp);
+
+	return rval;
+}
+
+/* akfm_erase */
+//erases the whole file
+//returns:
+//  0 if succesfully erased
+//  error otherwise
 int akfm_erase(ak_file_manager *akfm)
 {
 	//check to see file manager is not null
-	if (!akfm) return -1;
+	if (!akfm) return AKFM_NFM;
 	
 	//remove file
-	remove(akfm->fn);
-	
-	return 0;
+	return remove(akfm->fn);
 }
-
-
 
 
 /* akfm free */
